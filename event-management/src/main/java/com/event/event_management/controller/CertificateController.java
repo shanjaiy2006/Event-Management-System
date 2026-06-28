@@ -1,73 +1,91 @@
 package com.event.event_management.controller;
 
+import com.event.event_management.entity.Registration;
+import com.event.event_management.repository.AttendanceRepository;
+import com.event.event_management.repository.RegistrationRepository;
 import com.event.event_management.service.EmailService;
-import com.itextpdf.text.*;
+import com.itextpdf.text.Document;
+import com.itextpdf.text.PageSize;
+import com.itextpdf.text.Paragraph;
 import com.itextpdf.text.pdf.PdfWriter;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
 import java.io.ByteArrayOutputStream;
-
-import com.event.event_management.service.EmailService;
-import com.itextpdf.text.*;
-import com.itextpdf.text.pdf.PdfWriter;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
 
 @Tag(name = "Certificate APIs")
 @RestController
 @RequestMapping("/certificate")
+@SecurityRequirement(name = "bearerAuth")
 public class CertificateController {
+
     @Autowired
     private EmailService emailService;
 
+    @Autowired
+    private RegistrationRepository registrationRepository;
 
+    @Autowired
+    private AttendanceRepository attendanceRepository;
 
-
+    @Operation(
+            summary = "Generate and Email Certificate",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
     @GetMapping("/{name}/{email}")
     public String generateCertificate(
             @PathVariable String name,
             @PathVariable String email)
             throws Exception {
 
-        ByteArrayOutputStream baos =
-                new ByteArrayOutputStream();
+        // Check whether the student registered for an event
+        Registration registration = registrationRepository
+                .findByStudentNameAndStudentEmail(name, email)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Student is not registered for any event"));
 
-        Document document =
-                new Document(PageSize.A4);
+        // Check whether attendance is marked
+        if (!attendanceRepository.existsByStudentEmailAndPresentTrue(email)) {
+            throw new RuntimeException(
+                    "Attendance not marked. Certificate cannot be generated.");
+        }
 
-        PdfWriter.getInstance(
-                document,
-                baos
-        );
+        // Generate PDF
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        Document document = new Document(PageSize.A4);
+
+        PdfWriter.getInstance(document, baos);
 
         document.open();
 
-        document.add(
-                new Paragraph(
-                        "CERTIFICATE OF PARTICIPATION"
-                )
-        );
-
-        document.add(
-                new Paragraph(
-                        "Awarded to " + name
-                )
-        );
+        document.add(new Paragraph("CERTIFICATE OF PARTICIPATION"));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph(
+                "This certificate is proudly presented to"));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph(registration.getStudentName()));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph(
+                "For successfully participating in the event."));
+        document.add(new Paragraph(" "));
+        document.add(new Paragraph(
+                "Event ID : " + registration.getEventId()));
 
         document.close();
 
-        byte[] pdfBytes =
-                baos.toByteArray();
+        byte[] pdfBytes = baos.toByteArray();
 
+        // Send certificate
         emailService.sendCertificate(
-                email,
+                registration.getStudentEmail(),
                 pdfBytes
         );
 
-        return "Certificate sent successfully!";
+        return "Certificate generated and emailed successfully.";
     }
 }

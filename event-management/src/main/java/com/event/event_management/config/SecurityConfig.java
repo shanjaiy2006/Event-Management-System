@@ -17,14 +17,22 @@ public class SecurityConfig {
 
     @Autowired
     private JwtFilter jwtFilter;
+    @Autowired
+    private RateLimitFilter rateLimitFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.addFilterBefore(
+                rateLimitFilter,
+                UsernamePasswordAuthenticationFilter.class
+        );
 
         http.addFilterBefore(
                 jwtFilter,
                 UsernamePasswordAuthenticationFilter.class
         );
+
+
 
         http
                 .csrf(csrf -> csrf.disable())
@@ -61,8 +69,16 @@ public class SecurityConfig {
                         .requestMatchers("/registrations/**")
                         .hasRole("STUDENT")
 
+                        .requestMatchers("/qr/**")
+                        .hasAnyRole("ADMIN", "ORGANIZER")
+
+                        .requestMatchers("/qr-attendance/**")
+                        .hasAnyRole("ADMIN", "ORGANIZER")
+
                         .requestMatchers("/certificate/**")
                         .hasAnyRole("ADMIN", "ORGANIZER", "STUDENT")
+
+                        .requestMatchers("/actuator/**").permitAll()
 
                         .anyRequest()
                         .authenticated()

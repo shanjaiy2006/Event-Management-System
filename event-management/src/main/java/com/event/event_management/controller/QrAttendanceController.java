@@ -8,8 +8,13 @@ import com.event.event_management.service.EmailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@Tag(name = "QR Attendance APIs")
 @RestController
 @RequestMapping("/qr-attendance")
+@SecurityRequirement(name = "bearerAuth")
 public class QrAttendanceController {
 
     @Autowired

@@ -10,5 +10,7 @@ public interface AttendanceRepository
             Long eventId
     );
 
+    boolean existsByStudentEmailAndPresentTrue(String studentEmail);
+
 
 }
