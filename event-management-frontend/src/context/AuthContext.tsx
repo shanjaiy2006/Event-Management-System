@@ -27,34 +27,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      if (isTokenExpired(token)) {
-        localStorage.removeItem('jwt_token');
-        setToken(null);
-        setUser(null);
-        setProfilePicture(null);
-      } else {
-        const decoded = decodeToken(token);
-        if (decoded && decoded.email && decoded.role) {
-          const email = decoded.email;
-          setUser({
-            email,
-            role: decoded.role as 'ADMIN' | 'ORGANIZER' | 'STUDENT',
-            name: decoded.name || 'User',
-          });
-          setProfilePicture(localStorage.getItem(`profile_pic_${email}`));
-        } else {
+    let isMounted = true;
+
+    const initializeAuth = async () => {
+      if (token) {
+        if (isTokenExpired(token)) {
           localStorage.removeItem('jwt_token');
           setToken(null);
           setUser(null);
           setProfilePicture(null);
+        } else {
+          const decoded = decodeToken(token);
+          if (decoded && decoded.email && decoded.role) {
+            setUser({
+              email: decoded.email,
+              role: decoded.role as 'ADMIN' | 'ORGANIZER' | 'STUDENT',
+              name: decoded.name || 'User',
+            });
+
+            // Fetch complete profile from server
+            try {
+              const { default: api } = await import('@/services/api');
+              const res = await api.get('/profile');
+              if (res.data && isMounted) {
+                if (res.data.profilePicture) {
+                  setProfilePicture(res.data.profilePicture);
+                } else {
+                  setProfilePicture(null);
+                }
+
+                // Update user details if needed from server response
+                setUser(prev => prev ? {
+                  ...prev,
+                  name: res.data.name || prev.name,
+                  email: res.data.email || prev.email,
+                  role: (res.data.role as 'ADMIN' | 'ORGANIZER' | 'STUDENT') || prev.role
+                } : prev);
+              }
+            } catch (e) {
+              console.error("Failed to fetch profile", e);
+            }
+          } else {
+            localStorage.removeItem('jwt_token');
+            setToken(null);
+            setUser(null);
+            setProfilePicture(null);
+          }
         }
+      } else {
+        setUser(null);
+        setProfilePicture(null);
       }
-    } else {
-      setUser(null);
-      setProfilePicture(null);
-    }
-    setIsLoading(false);
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   const login = (newToken: string) => {
@@ -71,11 +104,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfilePicture = (pic: string | null) => {
     if (user) {
-      if (pic) {
-        localStorage.setItem(`profile_pic_${user.email}`, pic);
-      } else {
-        localStorage.removeItem(`profile_pic_${user.email}`);
-      }
       setProfilePicture(pic);
     }
   };
@@ -83,12 +111,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAuthenticated = !!token && !isTokenExpired(token);
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      token, 
-      login, 
-      logout, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      token,
+      login,
+      logout,
+      isAuthenticated,
       isLoading,
       profilePicture,
       updateProfilePicture

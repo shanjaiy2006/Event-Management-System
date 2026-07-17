@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import eventService from '@/services/eventService';
 import attendanceService from '@/services/attendanceService';
 import { Card } from '@/components/ui/Card';
@@ -39,12 +40,54 @@ export const QrAttendancePage: React.FC = () => {
       const errMsg = err.response?.data?.message || 'QR Ticket signature verification failed or user not registered.';
       toastError(errMsg);
       setScanResult({
-        email: scannedEmail,
+        email: scannedEmail || 'Unknown',
         success: false,
         msg: errMsg,
       });
     },
   });
+
+  useEffect(() => {
+    if (selectedEventId === '') return;
+    
+    const scanner = new Html5QrcodeScanner(
+      "reader",
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      /* verbose= */ false
+    );
+    
+    scanner.render(
+      (decodedText) => {
+        // QR Code format: VERIFIED:email:eventId
+        const parts = decodedText.split(':');
+        let emailToScan = decodedText;
+        if (parts.length >= 2 && parts[0] === 'VERIFIED') {
+           emailToScan = parts[1];
+        }
+        
+        scanner.pause(true);
+        setScannedEmail(emailToScan.trim());
+        
+        qrCheckinMutation.mutate({
+          email: emailToScan.trim(),
+          eventId: selectedEventId,
+        }, {
+           onSettled: () => {
+              setTimeout(() => {
+                 scanner.resume();
+              }, 2500);
+           }
+        });
+      },
+      (_error) => {
+        // Ignored, continuous scan
+      }
+    );
+    
+    return () => {
+      scanner.clear().catch(console.error);
+    };
+  }, [selectedEventId]);
 
   const handleSimulateScan = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,42 +107,29 @@ export const QrAttendancePage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-extrabold text-foreground">QR Attendance Scanner</h1>
         <p className="text-sm font-medium text-muted-foreground mt-1">
-          Scan student ticket barcodes or simulate inputs to record check-in attendance
+          Select an event, then scan student ticket barcodes or manually enter the email.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Left: View Finder & Simulation input */}
         <div className="space-y-6">
-          <Card className="p-0 overflow-hidden relative border border-border">
-            {/* Viewfinder simulation */}
-            <div className="aspect-square bg-slate-950 flex flex-col items-center justify-center p-6 relative">
-              {/* Scan box corners */}
-              <div className="absolute top-8 left-8 w-8 h-8 border-t-4 border-l-4 border-emerald-500 rounded-tl" />
-              <div className="absolute top-8 right-8 w-8 h-8 border-t-4 border-r-4 border-emerald-500 rounded-tr" />
-              <div className="absolute bottom-8 left-8 w-8 h-8 border-b-4 border-l-4 border-emerald-500 rounded-bl" />
-              <div className="absolute bottom-8 right-8 w-8 h-8 border-b-4 border-r-4 border-emerald-500 rounded-br" />
-
-              {/* Animated scan line */}
-              <motion.div
-                animate={{ y: [0, 200, 0] }}
-                transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
-                className="absolute left-8 right-8 h-0.5 bg-gradient-to-r from-transparent via-emerald-500 to-transparent z-10"
-                style={{ top: '8%' }}
-              />
-
+          <Card className="p-4 overflow-hidden relative border border-border flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 min-h-[300px]">
+            {selectedEventId === '' ? (
               <div className="text-center z-10 space-y-3">
-                <Scan className="h-12 w-12 text-emerald-500/70 mx-auto animate-pulse" />
-                <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest">
-                  Simulating Camera lens...
+                <Scan className="h-12 w-12 text-muted-foreground/50 mx-auto" />
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                  Select an event to enable camera
                 </p>
               </div>
-            </div>
+            ) : (
+              <div id="reader" className="w-full"></div>
+            )}
           </Card>
 
           {/* Form to input ticket details */}
@@ -112,7 +142,7 @@ export const QrAttendancePage: React.FC = () => {
                 <div className="relative">
                   <Calendar className="absolute left-3 top-3.5 h-4.5 w-4.5 text-muted-foreground pointer-events-none" />
                   <select
-                    className="glass-input pl-10 pr-4 py-2.5 text-sm w-full bg-white/40 dark:bg-black/20 border-border text-foreground appearance-none outline-none"
+                    className="bg-white border-border rounded-md pl-10 pr-4 py-2.5 text-sm w-full bg-white/40 border-border text-foreground appearance-none outline-none"
                     value={selectedEventId}
                     onChange={(e) => setSelectedEventId(e.target.value ? Number(e.target.value) : '')}
                   >
@@ -130,7 +160,7 @@ export const QrAttendancePage: React.FC = () => {
               </div>
 
               <Input
-                label="Student Ticket Email (Barcode Signature)"
+                label="Manual Email Entry (Simulation)"
                 placeholder="e.g. student@gmail.com"
                 value={scannedEmail}
                 onChange={(e) => setScannedEmail(e.target.value)}
@@ -161,7 +191,7 @@ export const QrAttendancePage: React.FC = () => {
               <AnimatePresence mode="wait">
                 {scanResult ? (
                   <motion.div
-                    key={scanResult.email + scanResult.success}
+                    key={scanResult.email + scanResult.success + Date.now()}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
@@ -192,7 +222,7 @@ export const QrAttendancePage: React.FC = () => {
                     <Scan className="h-10 w-10 mx-auto animate-pulse" />
                     <p className="text-sm font-bold">Awaiting Scan Signature</p>
                     <p className="text-xs font-semibold max-w-xs mx-auto">
-                      Select an event and specify a student's email coordinate to test.
+                      Select an event and show a valid QR code to the camera.
                     </p>
                   </div>
                 )}
